@@ -1,92 +1,82 @@
-import pandas as pd
-import numpy as np
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import mean_squared_error
-import joblib
 import streamlit as st
+import pandas as pd
+from sklearn.ensemble import RandomForestRegressor
 
-st.set_page_config(page_title="Restaurant Order Predictor", layout="centered", page_icon="🍽️")
+st.set_page_config(page_title="Weather-Based Predictor", layout="centered", page_icon="🌦️")
 
-st.markdown("""
-    <style>
-    .main {
-        background-color: #f9f9f9;
-        font-family: 'Arial', sans-serif;
-    }
-    .stButton>button {
-        background-color: #FF4B4B;
-        color: white;
-        font-weight: bold;
-        border-radius: 8px;
-        padding: 0.5em 2em;
-    }
-    .stButton>button:hover {
-        background-color: #ff7878;
-    }
-    .stSlider>div>div>div {
-        color: #333;
-    }
-    .stSelectbox>div>div>div {
-        color: #333;
-    }
-    </style>
-""", unsafe_allow_html=True)
+st.title("🌦️ Weather & Event-Based Food Order Predictor")
 
-data = {
-    'day_of_week': np.random.randint(0, 7, 500),  # 0=Monday, 6=Sunday
-    'is_holiday': np.random.randint(0, 2, 500),
-    'temperature': np.random.normal(25, 5, 500),
-    'rain_mm': np.random.exponential(1, 500),
-    'special_event': np.random.randint(0, 2, 500),
-    'previous_day_orders': np.random.randint(20, 200, 500),
-    'predicted_orders': np.random.randint(30, 250, 500)
-}
-df = pd.DataFrame(data)
+st.markdown("Predict restaurant orders using weather conditions and events.")
 
-X = df.drop(columns='predicted_orders')
-y = df['predicted_orders']
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+# -----------------------------
+# 📊 REALISTIC SAMPLE DATA (NOT RANDOM)
+# -----------------------------
+
+data = pd.DataFrame({
+    "temperature": [20, 22, 25, 30, 35, 38, 28, 26, 24, 32],
+    "rain":        [0,  2,  5,  0,  0, 10,  0,  3,  1,  0],
+    "is_holiday":  [0,  0,  1,  0,  1,  0,  0,  1,  0,  0],
+    "event":       [0,  1,  0,  0,  1,  0,  0,  1,  0,  1],
+    "prev_orders": [80, 90, 100, 120, 150, 140, 110, 130, 95, 125],
+    "orders":      [85, 105, 130, 140, 190, 180, 125, 170, 110, 160]
+})
+
+X = data[["temperature", "rain", "is_holiday", "event", "prev_orders"]]
+y = data["orders"]
 
 model = RandomForestRegressor(n_estimators=100, random_state=42)
-model.fit(X_train, y_train)
+model.fit(X, y)
 
-y_pred = model.predict(X_test)
+# -----------------------------
+# 📥 USER INPUT
+# -----------------------------
 
-# Mean Absolute Percentage Error
-def mean_absolute_percentage_error(y_true, y_pred):
-    y_true, y_pred = np.array(y_true), np.array(y_pred)
-    return np.mean(np.abs((y_true - y_pred) / y_true)) * 100
+st.subheader("📥 Enter Conditions")
 
-mape = mean_absolute_percentage_error(y_test, y_pred)
-accuracy = 100 - mape
-
-print(f"Accuracy: {accuracy:.2f}%")
-
-joblib.dump(model, 'restaurant_food_predictor.pkl')
-
-st.title("🍽️ Restaurant Food Order Predictor")
-st.markdown("### Predict expected number of orders based on weather, holidays, and events.")
-st.markdown("---")
-
-day_of_week = st.selectbox("Day of the Week", list(range(7)), format_func=lambda x: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'][x])
+temperature = st.slider("Temperature (°C)", 10, 45, 30)
+rain = st.slider("Rainfall (mm)", 0, 50, 0)
 is_holiday = st.selectbox("Is it a holiday?", [0, 1], format_func=lambda x: "Yes" if x else "No")
-temperature = st.slider("Temperature (°C)", 10.0, 40.0, 25.0)
-rain_mm = st.slider("Rainfall (mm)", 0.0, 20.0, 0.5)
-special_event = st.selectbox("Is there a special event?", [0, 1], format_func=lambda x: "Yes" if x else "No")
-previous_day_orders = st.slider("Previous Day Orders", 0, 300, 100)
+event = st.selectbox("Special Event?", [0, 1], format_func=lambda x: "Yes" if x else "No")
+prev_orders = st.slider("Previous Day Orders", 0, 500, 120)
+
+# -----------------------------
+# 🔮 PREDICTION
+# -----------------------------
 
 if st.button("🔮 Predict Orders"):
+
     input_data = pd.DataFrame([{
-        'day_of_week': day_of_week,
-        'is_holiday': is_holiday,
-        'temperature': temperature,
-        'rain_mm': rain_mm,
-        'special_event': special_event,
-        'previous_day_orders': previous_day_orders
+        "temperature": temperature,
+        "rain": rain,
+        "is_holiday": is_holiday,
+        "event": event,
+        "prev_orders": prev_orders
     }])
 
-    model = joblib.load('restaurant_food_predictor.pkl')
-    prediction = model.predict(input_data)[0]
-    st.success(f"🍔 Estimated Orders: **{int(prediction)}**")
-    st.balloons()
+    prediction = int(model.predict(input_data)[0])
+
+    st.success(f"🍔 Estimated Orders: {prediction}")
+
+    # -----------------------------
+    # 📊 INSIGHTS
+    # -----------------------------
+    if prediction > prev_orders:
+        st.info("📈 Expected increase in demand")
+    else:
+        st.warning("📉 Possible decrease in demand")
+
+    # -----------------------------
+    # 🤖 MODEL INFO
+    # -----------------------------
+    st.subheader("🤖 Model Info")
+    st.write("Model: Random Forest Regressor")
+    st.write("Features used: temperature, rain, holiday, event, previous orders")
+
+    # Feature importance
+    importance = pd.DataFrame({
+        "Feature": X.columns,
+        "Importance": model.feature_importances_
+    }).sort_values(by="Importance", ascending=False)
+
+    st.subheader("📊 Feature Importance")
+    st.dataframe(importance)

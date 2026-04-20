@@ -42,8 +42,19 @@ if st.button("🔮 Predict Food Usage"):
     if st.session_state.sales_data.empty:
         st.warning("Please enter some sales data first.")
     else:
-        predictions = predict_for_restaurant(st.session_state.sales_data)
+        predictions, model_info = predict_for_restaurant(st.session_state.sales_data)
         st.success("✅ Predictions completed!")
+
+        total_demand = {item: sum(days.values()) for item, days in predictions.items()}
+        top_item = max(total_demand, key=total_demand.get)
+        top_value = total_demand[top_item]
+
+        st.success(f"🔥 Highest Demand Item: {top_item} ({top_value} orders expected)")
+
+        st.subheader("🤖 Model Selection Info")
+
+        for item, info in model_info.items():
+            st.write(f"{item}: {info}")
 
         result_df = pd.DataFrame(predictions).T
         result_df.columns.name = "Date"

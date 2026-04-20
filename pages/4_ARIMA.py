@@ -1,82 +1,180 @@
 import streamlit as st
 import pandas as pd
-from statsmodels.tsa.arima.model import ARIMA
 import matplotlib.pyplot as plt
+from statsmodels.tsa.arima.model import ARIMA
+from statsmodels.tsa.stattools import adfuller
 
-# Function for loading and preparing data
-def prepare_data(df):
+st.set_page_config(page_title="ARIMA Food Predictor", layout="centered", page_icon="🍽️")
+
+st.title("🍽️ Restaurant Food Usage Predictor (ARIMA)")
+
+# -----------------------------
+# 🔧 Helper Functions
+# -----------------------------
+
+def prepare_time_series(df, food_item):
+    df = df.copy()
     df['date'] = pd.to_datetime(df['date'])
-    df.set_index('date', inplace=True)
-    return df
+    df = df.sort_values('date')
+
+    item_df = df[df['food_item'] == food_item]
+    ts = item_df.groupby('date')['quantity_sold'].sum()
+
+    return ts
 
 
-# ARIMA model for forecasting food sales
-def forecast_with_arima(df, food_item, forecast_days=7):
-    food_data = df[df['food_item'] == food_item]
-    daily_sales = food_data.groupby('date')['quantity_sold'].sum()
-    model = ARIMA(daily_sales, order=(5, 1, 0))
+def check_stationarity(ts):
+    result = adfuller(ts.dropna())
+    return result[1] < 0.05  # p-value < 0.05 → stationary
+
+
+def forecast_with_arima(df, food_item, steps=7):
+    ts = prepare_time_series(df, food_item)
+
+    # Handle stationarity
+    if not check_stationarity(ts):
+        ts = ts.diff().dropna()
+
+    # ARIMA parameters
+    p, d, q = 3, 1, 1
+
+    model = ARIMA(ts, order=(p, d, q))
     model_fit = model.fit()
-    forecast = model_fit.forecast(steps=forecast_days)
-    forecast_dates = pd.date_range(start=daily_sales.index[-1] + pd.Timedelta(days=1), periods=forecast_days)
+
+    forecast = model_fit.forecast(steps=steps)
+
+    # Future dates
+    last_date = ts.index[-1]
+    future_dates = pd.date_range(start=last_date + pd.Timedelta(days=1), periods=steps)
+
     forecast_df = pd.DataFrame({
-        'date': forecast_dates,
-        'predicted_sales': forecast
+        'date': future_dates,
+        'predicted_sales': forecast.values
     })
+
+    forecast_df['predicted_sales'] = forecast_df['predicted_sales'].clip(lower=0)
+
     return forecast_df
 
-st.title("🍽️ Restaurant Food Usage Predictor with ARIMA")
+
+# -----------------------------
+# 📂 File Upload
+# -----------------------------
 
 uploaded_file = st.file_uploader("Upload your sales CSV", type=["csv"])
 
 if uploaded_file is not None:
     try:
         df = pd.read_csv(uploaded_file)
-        df = prepare_data(df)
+
+        # 🔥 Validation
+        required_cols = {'date', 'food_item', 'quantity_sold'}
+        if not required_cols.issubset(df.columns):
+            st.error(f"CSV must contain: {', '.join(required_cols)}")
+            st.stop()
 
         st.subheader("📋 Preview of Uploaded Data")
         st.dataframe(df.sample(10))
 
-        # Select food item for ARIMA forecasting
+        # Select item
         food_items = df['food_item'].unique()
-        selected_food_item = st.selectbox("Select Food Item for ARIMA Forecast", food_items)
+        selected_food_item = st.selectbox("Select Food Item", food_items)
 
-        if selected_food_item:
-            forecast_days = st.slider("Number of Days to Forecast", 1, 30, 7)
+        forecast_days = st.slider("Forecast Days", 1, 30, 7)
+
+        if st.button("🔮 Run ARIMA Forecast"):
+
             forecast_df = forecast_with_arima(df, selected_food_item, forecast_days)
 
-            st.subheader(f"📊 Predicted Sales for Next {forecast_days} Days for {selected_food_item}")
+            st.success("✅ Forecast completed!")
+
+            # -----------------------------
+            # 🤖 Model Info
+            # -----------------------------
+            st.subheader("🤖 Model Info")
+            st.write("Model: ARIMA")
+            st.write("Configuration: (p=3, d=1, q=1)")
+            st.write("Stationarity handled using differencing")
+
+            # -----------------------------
+            # 📊 Output Table
+            # -----------------------------
+            st.subheader(f"📊 Forecast for {selected_food_item}")
             st.dataframe(forecast_df)
 
-            st.subheader(f"📈 Sales Forecast for {selected_food_item}")
+            # -----------------------------
+            # 📈 Trend Insight
+            # -----------------------------
+            if len(forecast_df) > 1:
+                if forecast_df['predicted_sales'].iloc[-1] > forecast_df['predicted_sales'].iloc[0]:
+                    st.success("📈 Increasing demand trend predicted")
+                else:
+                    st.warning("📉 Decreasing demand trend predicted")
 
-            # Group data for the selected food item
-            historical_data = (
-                df[df['food_item'] == selected_food_item]
-                .groupby('date')['quantity_sold']
-                .sum()
+            # -----------------------------
+            # 📊 Summary Stat
+            # -----------------------------
+            avg_prediction = int(forecast_df['predicted_sales'].mean())
+            st.info(f"📊 Average predicted daily sales: {avg_prediction}")
+
+            # -----------------------------
+            # 📈 Visualization
+            # -----------------------------
+            st.subheader("📈 Forecast Visualization")
+
+            # 🔥 FIXED HISTORICAL DATA
+            hist_df = df[df['food_item'] == selected_food_item].copy()
+
+            hist_df['date'] = pd.to_datetime(hist_df['date'])
+            hist_df = hist_df.sort_values('date')
+
+            historical_data = hist_df.groupby('date')['quantity_sold'].sum()
+
+            # Safety check
+            if historical_data.empty:
+                st.error("No historical data available for this item")
+                st.stop()
+
+            fig, ax = plt.subplots()
+
+            # Convert forecast date
+            forecast_df['date'] = pd.to_datetime(forecast_df['date'])
+
+            # Plot historical
+            ax.plot(
+                historical_data.index,
+                historical_data.values,
+                label='Historical Sales'
             )
 
-            # Plotting
-            fig, ax = plt.subplots()
-            ax.plot(historical_data.index, historical_data.values, label='Historical Sales')
-            ax.plot(forecast_df['date'], forecast_df['predicted_sales'], label='Forecasted Sales', color='red')
+            # Plot forecast
+            ax.plot(
+                forecast_df['date'],
+                forecast_df['predicted_sales'],
+                label='Forecasted Sales',
+                linestyle='--'
+            )
 
             ax.set_title(f"Sales Forecast for {selected_food_item}")
             ax.set_xlabel("Date")
             ax.set_ylabel("Quantity Sold")
             ax.legend()
+
             st.pyplot(fig)
 
-            # Allow users to download the forecasted data
+            # -----------------------------
+            # 📥 Download
+            # -----------------------------
             csv_data = forecast_df.to_csv(index=False)
             st.download_button(
-                label="📥 Download Forecasted Sales as CSV",
+                label="📥 Download Forecast CSV",
                 data=csv_data,
                 file_name=f"{selected_food_item}_forecast.csv",
                 mime="text/csv"
             )
 
     except Exception as e:
-        st.error(f"Error reading file: {e}")
+        st.error(f"Error processing file: {e}")
+
 else:
     st.info("Please upload a CSV to begin.")

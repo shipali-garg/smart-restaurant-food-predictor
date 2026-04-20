@@ -25,8 +25,20 @@ if uploaded_file is not None:
             st.dataframe(restaurant_data.sample(10))
 
             if st.button("🔮 Predict Food Usage"):
-                predictions = predict_for_restaurant(restaurant_data)
+                predictions,model_info = predict_for_restaurant(restaurant_data)
                 st.success("✅ Predictions completed!")
+
+                st.subheader("🤖 Model Selection Info")
+
+                for item, info in model_info.items():
+                    st.write(f"{item}: {info}")
+
+                # 🔥 ADD BELOW THIS LINE
+                total_demand = {item: sum(days.values()) for item, days in predictions.items()}
+                top_item = max(total_demand, key=total_demand.get)
+                top_value = total_demand[top_item]
+
+                st.success(f"🔥 Highest Demand Item: {top_item} ({top_value} orders expected)")
 
                 result_df = pd.DataFrame(predictions).T
                 result_df.columns.name = "Date"
