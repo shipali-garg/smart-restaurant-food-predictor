@@ -76,6 +76,7 @@ This system can help:
 
 ## Author
 
+* Shipali Garg
 Developed as part of a machine learning project to solve real-world restaurant demand prediction problems.
 
 
