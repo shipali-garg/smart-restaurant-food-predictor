@@ -5,28 +5,24 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_absolute_error
 from datetime import timedelta
 
-
-def prepare_features(df):
+def create_features(df):
     df = df.copy()
-    # 🔥 DATA CLEANING
-    df = df.dropna(subset=['date', 'food_item', 'quantity_sold'])
-    df = df.sort_values('date')
 
-    # Convert date
+    # 1. Convert date
     df['date'] = pd.to_datetime(df['date'])
+
+    # 2. Sort data 
     df = df.sort_values('date')
 
-    # Feature Engineering
+    # 3. Basic time feature
     df['day_num'] = (df['date'] - df['date'].min()).dt.days
-    df['day_of_week'] = df['date'].dt.dayofweek
-    df['is_weekend'] = df['day_of_week'].isin([5, 6]).astype(int)
 
-    # Lag features
-    df['lag_1'] = df['quantity_sold'].shift(1)
-    df['rolling_avg'] = df['quantity_sold'].rolling(3).mean()
+    # 4. Previous day sales (lag feature)
+    df['prev_sales'] = df.groupby('food_item')['quantity_sold'].shift(1)
 
-    # Handle missing values
-    df = df.bfill().ffill()
+    # Fill missing lag values
+    df['prev_sales'] = df['prev_sales'].fillna(df['quantity_sold'].mean())
+
     return df
 
 
@@ -61,7 +57,7 @@ def predict_for_restaurant(data):
         # Select best model
         best_model = lr if lr_error < rf_error else rf
 
-        # 🔥 STORE MODEL INFO
+        # STORE MODEL INFO
         if lr_error < rf_error:
             model_info[item] = f"Linear Regression (MAE: {lr_error:.2f})"
         else:
